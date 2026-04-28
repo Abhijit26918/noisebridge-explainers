@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>③ Auxiliary Noise Predictor — NoiseBridge</title>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Georgia', serif; background: #FAFAF8; color: #1C1917; min-height: 100vh; }
+  .header { background: #1C1917; color: #fff; padding: 1.5rem 2.5rem; display: flex; align-items: center; justify-content: space-between; }
+  .badge { font-family: Calibri, sans-serif; font-size: 11px; letter-spacing: 0.15em; color: #C2410C; text-transform: uppercase; margin-bottom: 6px; }
+  .header h1 { font-size: 24px; font-weight: bold; }
+  .back { font-family: Calibri, sans-serif; font-size: 13px; color: #78716C; text-decoration: none; border: 1px solid #3D3530; padding: 6px 14px; border-radius: 4px; }
+  .back:hover { color: #C2410C; border-color: #C2410C; }
+  .main { max-width: 860px; margin: 0 auto; padding: 2.5rem 2rem 4rem; }
+  .section { margin-bottom: 2.5rem; }
+  .section-label { font-family: Calibri, sans-serif; font-size: 11px; letter-spacing: 0.15em; color: #C2410C; text-transform: uppercase; font-weight: bold; margin-bottom: 10px; }
+  h2 { font-size: 20px; font-weight: bold; margin-bottom: 0.75rem; }
+  p { font-size: 15px; line-height: 1.75; color: #44403C; margin-bottom: 0.75rem; }
+  .eq-block { background: #F5F4F2; border: 1px solid #E7E5E4; border-radius: 6px; padding: 1.25rem 1.75rem; margin: 1.25rem 0; text-align: center; font-size: 17px; overflow-x: auto; }
+  .eq-label { font-family: Calibri, sans-serif; font-size: 11px; color: #78716C; text-align: right; margin-top: 6px; }
+  hr { border: none; border-top: 1px solid #E7E5E4; margin: 2rem 0; }
+  .intuition { background: #fff7ed; border-left: 3px solid #C2410C; padding: 1rem 1.25rem; border-radius: 0 6px 6px 0; margin: 1.25rem 0; }
+  .intuition p { margin: 0; }
+  .symbol-table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 1rem 0; }
+  .symbol-table th { text-align: left; font-family: Calibri, sans-serif; font-size: 11px; letter-spacing: 0.1em; color: #78716C; text-transform: uppercase; padding: 6px 12px; border-bottom: 1px solid #E7E5E4; }
+  .symbol-table td { padding: 8px 12px; border-bottom: 1px solid #F0EFED; vertical-align: top; line-height: 1.5; }
+  .symbol-table td:first-child { font-family: Consolas, monospace; color: #C2410C; white-space: nowrap; }
+  .finding { background: #F0FDF4; border-left: 3px solid #16A34A; padding: 1rem 1.25rem; border-radius: 0 6px 6px 0; margin: 1.25rem 0; }
+  .finding-label { font-family: Calibri, sans-serif; font-size: 11px; letter-spacing: 0.1em; color: #16A34A; text-transform: uppercase; font-weight: bold; margin-bottom: 4px; }
+  .finding p { margin: 0; }
+  .warning { background: #FEF2F2; border-left: 3px solid #DC2626; padding: 1rem 1.25rem; border-radius: 0 6px 6px 0; margin: 1.25rem 0; }
+  .warning-label { font-family: Calibri, sans-serif; font-size: 11px; letter-spacing: 0.1em; color: #DC2626; text-transform: uppercase; font-weight: bold; margin-bottom: 4px; }
+  .warning p { margin: 0; }
+  .vs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin: 1rem 0; }
+  @media (max-width: 600px) { .vs-grid { grid-template-columns: 1fr; } }
+  .vs-card { border: 1px solid #E7E5E4; border-radius: 6px; padding: 1rem 1.25rem; }
+  .vs-card h3 { font-size: 14px; font-weight: bold; margin-bottom: 8px; }
+  .vs-card p { font-size: 13px; margin: 0; }
+  .vs-card.bad { border-color: #FCA5A5; background: #FEF2F2; }
+  .vs-card.good { border-color: #86EFAC; background: #F0FDF4; }
+  .total-loss { background: #1C1917; color: #fff; border-radius: 6px; padding: 1.5rem; margin: 1.25rem 0; text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="badge">NoiseBridge · Component ③</div>
+    <h1>Auxiliary Noise-Level Predictor</h1>
+  </div>
+  <a class="back" href="javascript:window.close()">✕ Close</a>
+</div>
+
+<div class="main">
+
+  <div class="section">
+    <div class="section-label">Purpose</div>
+    <p>The auxiliary head adds a <strong>multi-task regularisation signal</strong> by asking the model to predict the noise level of each noisy example. This forces the noisy representation \(\mathbf{z}^n\) to encode noise-level information explicitly, making it more structured and easier for the classifier to use.</p>
+    <div class="intuition">
+      <p><strong>Intuition:</strong> A representation that knows "this sentence is highly corrupted" can adjust its confidence accordingly. The auxiliary loss nudges the encoder to disentangle noise severity from semantic content — without the catastrophic failure of adversarial gradient reversal.</p>
+    </div>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">Equation</div>
+    <div class="eq-block">
+      \[ \mathcal{L}_{\mathrm{aux}} = -\sum_{k=0}^{K-1} y_k^{\mathrm{noise}} \log\, q_\eta(\mathbf{z}^n)_k \]
+    </div>
+    <div class="eq-label">Equation (5) — cross-entropy over K=4 noise levels {clean, low, medium, high}</div>
+
+    <h2 style="margin-top:1.5rem">Complete training objective</h2>
+    <div class="total-loss">
+      \[ \mathcal{L} = \underbrace{\mathcal{L}_{\mathrm{CE}}}_{\text{classification}} + \alpha\,\underbrace{\mathcal{L}_{\mathrm{PWNIC}}}_{\text{contrastive}} + \gamma\,\underbrace{\mathcal{L}_{\mathrm{aux}}}_{\text{noise pred.}} \]
+      <p style="font-size:13px; color:#A8A29E; margin-top:12px; font-family:Calibri,sans-serif">α = 0.15 · γ = 0.2 · class weights 1.66:1 for L_CE</p>
+    </div>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">Symbol Reference</div>
+    <table class="symbol-table">
+      <tr><th>Symbol</th><th>Meaning</th></tr>
+      <tr><td>q_η</td><td>Auxiliary classifier — a linear layer mapping z^n ∈ ℝ^768 → ℝ^4, shared weights across the batch</td></tr>
+      <tr><td>z^n</td><td>Noisy sentence representation from the noise-aware gate (same z used for classification)</td></tr>
+      <tr><td>y^noise ∈ {0,1,2,3}</td><td>One-hot noise level label: 0=clean, 1=low, 2=medium, 3=high</td></tr>
+      <tr><td>K = 4</td><td>Number of noise levels in HindiMix-Noisy</td></tr>
+      <tr><td>α = 0.15</td><td>PWNIC loss weight in the total objective</td></tr>
+      <tr><td>γ = 0.2</td><td>Auxiliary loss weight — tuned so it regularises without dominating</td></tr>
+    </table>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">Critical design: auto-disable</div>
+    <p>The auxiliary head is <strong>automatically disabled</strong> when fewer than 2 distinct noise levels appear in a training batch. This is essential — without it, the head receives a constant target (e.g. all "high") and the loss becomes trivially zero, which is harmless. But in the v1 design with GRL, a constant target caused catastrophic collapse.</p>
+
+    <div class="vs-grid">
+      <div class="vs-card bad">
+        <h3>❌ v1: GRL + adversarial head</h3>
+        <p>Constant noise labels → adversarial predictor achieves zero loss instantly → GRL pushes encoder toward uniform representations → classification collapses.<br><br>XLM-R high noise: <strong>0.777</strong> (−5.2 F1 from baseline).</p>
+      </div>
+      <div class="vs-card good">
+        <h3>✓ v2: Aux head + auto-disable</h3>
+        <p>No GRL. Constant noise labels → aux head auto-disabled → no gradient → no harm. When multiple noise levels present → regularises correctly.<br><br>XLM-R high noise: <strong>0.835</strong> (+0.56 over baseline).</p>
+      </div>
+    </div>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">Applied only to noisy stream</div>
+    <p>The auxiliary head is applied <strong>only to \(\mathbf{z}^n\)</strong> (the noisy representation), never to \(\mathbf{z}^c\). This is intentional — the clean representation should not be made noise-level-aware; it should remain as close to the original semantic space as possible.</p>
+    <p>During inference, only the clean stream classification head is used. The auxiliary head and PWNIC projection head are discarded after training — zero inference overhead.</p>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Result</div>
+    <div class="finding">
+      <div class="finding-label">Ablation (XLM-R, seed 42)</div>
+      <p>Gate + PWNIC: 0.8401 → Gate + PWNIC + Aux: <strong>0.8434</strong> (+0.33). The auxiliary head provides a consistent further boost across all 3 seeds without any instability.</p>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>② PWNIC Loss — NoiseBridge</title>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Georgia', serif; background: #FAFAF8; color: #1C1917; min-height: 100vh; }
+  .header { background: #1C1917; color: #fff; padding: 1.5rem 2.5rem; display: flex; align-items: center; justify-content: space-between; }
+  .badge { font-family: Calibri, sans-serif; font-size: 11px; letter-spacing: 0.15em; color: #C2410C; text-transform: uppercase; margin-bottom: 6px; }
+  .header h1 { font-size: 24px; font-weight: bold; }
+  .back { font-family: Calibri, sans-serif; font-size: 13px; color: #78716C; text-decoration: none; border: 1px solid #3D3530; padding: 6px 14px; border-radius: 4px; }
+  .back:hover { color: #C2410C; border-color: #C2410C; }
+  .main { max-width: 860px; margin: 0 auto; padding: 2.5rem 2rem 4rem; }
+  .section { margin-bottom: 2.5rem; }
+  .section-label { font-family: Calibri, sans-serif; font-size: 11px; letter-spacing: 0.15em; color: #C2410C; text-transform: uppercase; font-weight: bold; margin-bottom: 10px; }
+  h2 { font-size: 20px; font-weight: bold; margin-bottom: 0.75rem; }
+  p { font-size: 15px; line-height: 1.75; color: #44403C; margin-bottom: 0.75rem; }
+  .eq-block { background: #F5F4F2; border: 1px solid #E7E5E4; border-radius: 6px; padding: 1.25rem 1.75rem; margin: 1.25rem 0; text-align: center; font-size: 17px; overflow-x: auto; }
+  .eq-label { font-family: Calibri, sans-serif; font-size: 11px; color: #78716C; text-align: right; margin-top: 6px; }
+  hr { border: none; border-top: 1px solid #E7E5E4; margin: 2rem 0; }
+  .intuition { background: #fff7ed; border-left: 3px solid #C2410C; padding: 1rem 1.25rem; border-radius: 0 6px 6px 0; margin: 1.25rem 0; }
+  .intuition p { margin: 0; }
+  .symbol-table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 1rem 0; }
+  .symbol-table th { text-align: left; font-family: Calibri, sans-serif; font-size: 11px; letter-spacing: 0.1em; color: #78716C; text-transform: uppercase; padding: 6px 12px; border-bottom: 1px solid #E7E5E4; }
+  .symbol-table td { padding: 8px 12px; border-bottom: 1px solid #F0EFED; vertical-align: top; line-height: 1.5; }
+  .symbol-table td:first-child { font-family: Consolas, monospace; color: #C2410C; white-space: nowrap; }
+  .finding { background: #F0FDF4; border-left: 3px solid #16A34A; padding: 1rem 1.25rem; border-radius: 0 6px 6px 0; margin: 1.25rem 0; }
+  .finding-label { font-family: Calibri, sans-serif; font-size: 11px; letter-spacing: 0.1em; color: #16A34A; text-transform: uppercase; font-weight: bold; margin-bottom: 4px; }
+  .finding p { margin: 0; }
+  .example-row { display: grid; grid-template-columns: 1fr 1fr 100px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #F0EFED; font-size: 14px; }
+  .example-row:last-child { border-bottom: none; }
+  .example-header { font-family: Calibri, sans-serif; font-size: 11px; color: #78716C; letter-spacing: 0.08em; text-transform: uppercase; }
+  .phi-val { font-family: Consolas, monospace; color: #C2410C; font-weight: bold; text-align: right; }
+  .phi-bar-bg { height: 6px; background: #E7E5E4; border-radius: 3px; margin-top: 4px; }
+  .phi-bar { height: 100%; background: #C2410C; border-radius: 3px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin: 1rem 0; }
+  @media (max-width: 600px) { .two-col { grid-template-columns: 1fr; } }
+  .mini-card { background: #F5F4F2; border: 1px solid #E7E5E4; border-radius: 6px; padding: 1rem; }
+  .mini-card h3 { font-size: 14px; font-weight: bold; margin-bottom: 6px; }
+  .mini-card p { font-size: 13px; margin: 0; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="badge">NoiseBridge · Component ②</div>
+    <h1>PWNIC — Phonetic-Weighted Noise-Invariant Contrastive Loss</h1>
+  </div>
+  <a class="back" href="javascript:window.close()">✕ Close</a>
+</div>
+
+<div class="main">
+
+  <div class="section">
+    <div class="section-label">Purpose</div>
+    <p>PWNIC aligns the representation of a clean utterance with its ASR-noisy version in a learned projection space. The key innovation: <strong>the alignment pressure is proportional to how phonetically different the two versions are</strong>. Pairs that are nearly identical contribute little; severely distorted pairs receive the strongest gradient.</p>
+    <div class="intuition">
+      <p><strong>Why this matters:</strong> Standard InfoNCE treats all positive pairs equally. But "hello" → "helo" (minor deletion) deserves far less correction force than "madarchod" → "mzdrchd" (severe corruption). PWNIC encodes this distinction directly into the loss.</p>
+    </div>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">Step 1 — Phonetic Dissimilarity Weight</div>
+    <div class="eq-block">
+      \[ \phi(x^c, \tilde{x}) = 1 - \frac{1}{M} \sum_{j=1}^{M} \mathrm{JW}(w_j^c,\, w_j^n) \]
+    </div>
+    <div class="eq-label">Equation (3) — per-pair phonetic weight φ ∈ [0, 1]</div>
+    <p>Where \(M = \max(|x^c|_w, |\tilde{x}|_w)\) is the maximum word count, JW(·,·) is Jaro-Winkler string similarity, and unpaired words (from insertions/deletions) contribute similarity 0. So \(\phi = 0\) means the texts are identical; \(\phi = 1\) means completely disjoint.</p>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Jaro-Winkler similarity — recap</div>
+    <div class="eq-block" style="font-size:15px">
+      \[ J(s_1,s_2) = \frac{1}{3}\!\left(\frac{m}{|s_1|} + \frac{m}{|s_2|} + \frac{m - t/2}{m}\right) \]
+      \[ \mathrm{JW}(s_1,s_2) = J + \ell \cdot p \cdot (1-J) \]
+    </div>
+    <p style="font-size:13px; color:#78716C">\(m\) = matching characters within window; \(t\) = transpositions; \(\ell\) = common prefix length (≤4); \(p = 0.1\). Designed for short strings — perfect for comparing individual words.</p>
+  </div>
+
+  <div class="section">
+    <div class="section-label">φ values in practice</div>
+    <div class="example-row example-header">
+      <span>Clean</span><span>Noisy (high noise)</span><span>φ</span>
+    </div>
+    <div class="example-row">
+      <span>madarchod</span><span>mzdrchd</span>
+      <div><div class="phi-val">0.089</div><div class="phi-bar-bg"><div class="phi-bar" style="width:89%"></div></div></div>
+    </div>
+    <div class="example-row">
+      <span>chutiya mat bol</span><span>chuiya mat bl</span>
+      <div><div class="phi-val">0.051</div><div class="phi-bar-bg"><div class="phi-bar" style="width:51%"></div></div></div>
+    </div>
+    <div class="example-row">
+      <span>bahut bura hua</span><span>bahut bur hua</span>
+      <div><div class="phi-val">0.018</div><div class="phi-bar-bg"><div class="phi-bar" style="width:18%"></div></div></div>
+    </div>
+    <div class="example-row">
+      <span>aaj mausam acha hai</span><span>aaj mausam acha hai</span>
+      <div><div class="phi-val">0.000</div><div class="phi-bar-bg"><div class="phi-bar" style="width:0%"></div></div></div>
+    </div>
+    <p style="font-size:13px; color:#78716C; margin-top:0.75rem">Empirical means across benchmark: low noise φ̄ = 0.025 · medium φ̄ = 0.039 · high φ̄ = 0.056</p>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">Step 2 — PWNIC Objective</div>
+    <div class="eq-block">
+      \[
+      \mathcal{L}_{\mathrm{PWNIC}} =
+      -\frac{1}{\displaystyle\sum_{i} \phi_i}
+      \sum_{i=1}^{N} \phi_i \cdot
+      \log \frac{
+        \exp\!\left(\mathrm{sim}(\mathbf{p}_i^c, \mathbf{p}_i^n) / \tau\right)
+      }{
+        \displaystyle\sum_{\substack{k=1\\k\neq i}}^{2N}
+        \exp\!\left(\mathrm{sim}(\mathbf{p}_i^c, \mathbf{p}_k) / \tau\right)
+      }
+      \]
+    </div>
+    <div class="eq-label">Equation (4) — PWNIC loss · τ = 0.15 · α = 0.15 in total loss</div>
+    <p>Where \(\mathbf{p}_i^c = \pi_\xi(\mathbf{z}_i^c)\) and \(\mathbf{p}_i^n = \pi_\xi(\mathbf{z}_i^n)\) are projections through a 2-layer MLP \(\pi_\xi\). The denominator sums over all \(2N\) embeddings in the batch (N clean + N noisy) excluding the anchor.</p>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">Symbol Reference</div>
+    <table class="symbol-table">
+      <tr><th>Symbol</th><th>Meaning</th></tr>
+      <tr><td>φ_i ∈ [0,1]</td><td>Phonetic dissimilarity weight for pair i — the key per-instance weight</td></tr>
+      <tr><td>p_i^c, p_i^n</td><td>Projected clean / noisy representations via 2-layer MLP π_ξ (output dim = 128)</td></tr>
+      <tr><td>sim(a,b)</td><td>Cosine similarity: a·b / (‖a‖ ‖b‖)</td></tr>
+      <tr><td>τ = 0.15</td><td>Temperature — controls sharpness of the distribution; lower = harder negatives</td></tr>
+      <tr><td>N</td><td>Batch size of clean-noisy pairs</td></tr>
+      <tr><td>2N</td><td>Total embeddings in contrastive pool (N clean + N noisy)</td></tr>
+      <tr><td>π_ξ</td><td>Projection head (MLP) — separate from classifier; contrastive gradients don't corrupt the classification space</td></tr>
+    </table>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">Connection to InfoNCE</div>
+    <div class="two-col">
+      <div class="mini-card">
+        <h3>Standard InfoNCE (SimCSE)</h3>
+        <p>All positive pairs weighted equally. Does not distinguish between trivially similar and severely distorted pairs.</p>
+      </div>
+      <div class="mini-card">
+        <h3>PWNIC (ours)</h3>
+        <p>Weight φ_i scales the contribution of each pair. When φ_i = 0 (no distortion), zero gradient. When φ_i is high (severe noise), maximum gradient pull.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Result</div>
+    <div class="finding">
+      <div class="finding-label">Ablation (XLM-R, seed 42)</div>
+      <p>Gate only: 0.8339 → Gate + PWNIC: <strong>0.8401</strong> (+0.62). Biggest single component gain. XLM-R benefits most because its SentencePiece tokenizer preserves phonetic structure that Jaro-Winkler can measure. mBERT/MuRIL WordPiece normalises this away.</p>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

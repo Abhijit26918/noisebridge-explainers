@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>① Noise-Aware Attention Gate — NoiseBridge</title>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Georgia', serif; background: #FAFAF8; color: #1C1917; min-height: 100vh; }
+  .header { background: #1C1917; color: #fff; padding: 1.5rem 2.5rem; display: flex; align-items: center; justify-content: space-between; }
+  .header-left { }
+  .badge { font-family: Calibri, sans-serif; font-size: 11px; letter-spacing: 0.15em; color: #C2410C; text-transform: uppercase; margin-bottom: 6px; }
+  .header h1 { font-size: 24px; font-weight: bold; letter-spacing: -0.02em; }
+  .back { font-family: Calibri, sans-serif; font-size: 13px; color: #78716C; text-decoration: none; border: 1px solid #3D3530; padding: 6px 14px; border-radius: 4px; }
+  .back:hover { color: #C2410C; border-color: #C2410C; }
+  .main { max-width: 860px; margin: 0 auto; padding: 2.5rem 2rem 4rem; }
+  .section { margin-bottom: 2.5rem; }
+  .section-label { font-family: Calibri, sans-serif; font-size: 11px; letter-spacing: 0.15em; color: #C2410C; text-transform: uppercase; font-weight: bold; margin-bottom: 10px; }
+  h2 { font-size: 20px; font-weight: bold; margin-bottom: 0.75rem; color: #1C1917; }
+  p { font-size: 15px; line-height: 1.75; color: #44403C; margin-bottom: 0.75rem; }
+  .eq-block { background: #F5F4F2; border: 1px solid #E7E5E4; border-radius: 6px; padding: 1.25rem 1.75rem; margin: 1.25rem 0; text-align: center; font-size: 17px; }
+  .eq-label { font-family: Calibri, sans-serif; font-size: 11px; color: #78716C; text-align: right; margin-top: 6px; letter-spacing: 0.05em; }
+  hr { border: none; border-top: 1px solid #E7E5E4; margin: 2rem 0; }
+  .intuition { background: #fff7ed; border-left: 3px solid #C2410C; padding: 1rem 1.25rem; border-radius: 0 6px 6px 0; margin: 1.25rem 0; }
+  .intuition p { margin: 0; color: #44403C; }
+  .symbol-table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 1rem 0; }
+  .symbol-table th { text-align: left; font-family: Calibri, sans-serif; font-size: 11px; letter-spacing: 0.1em; color: #78716C; text-transform: uppercase; padding: 6px 12px; border-bottom: 1px solid #E7E5E4; }
+  .symbol-table td { padding: 8px 12px; border-bottom: 1px solid #F0EFED; vertical-align: top; line-height: 1.5; }
+  .symbol-table td:first-child { font-family: Consolas, monospace; color: #C2410C; white-space: nowrap; }
+  .diagram { background: #fff; border: 1px solid #E7E5E4; border-radius: 8px; padding: 1.5rem; margin: 1.25rem 0; }
+  .flow { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+  .flow-box { background: #F5F4F2; border: 1px solid #D6D3D1; border-radius: 4px; padding: 8px 14px; font-size: 13px; font-family: Calibri, sans-serif; text-align: center; min-width: 100px; }
+  .flow-box.accent { background: #fff7ed; border-color: #C2410C; color: #C2410C; font-weight: bold; }
+  .flow-arrow { font-size: 18px; color: #D6D3D1; padding: 0 8px; }
+  .finding { background: #F0FDF4; border-left: 3px solid #16A34A; padding: 1rem 1.25rem; border-radius: 0 6px 6px 0; margin: 1.25rem 0; }
+  .finding-label { font-family: Calibri, sans-serif; font-size: 11px; letter-spacing: 0.1em; color: #16A34A; text-transform: uppercase; font-weight: bold; margin-bottom: 4px; }
+  .finding p { margin: 0; }
+  .warning { background: #FEF2F2; border-left: 3px solid #DC2626; padding: 1rem 1.25rem; border-radius: 0 6px 6px 0; margin: 1.25rem 0; }
+  .warning-label { font-family: Calibri, sans-serif; font-size: 11px; letter-spacing: 0.1em; color: #DC2626; text-transform: uppercase; font-weight: bold; margin-bottom: 4px; }
+  .warning p { margin: 0; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="badge">NoiseBridge · Component ①</div>
+    <h1>Noise-Aware Attention Gate</h1>
+  </div>
+  <a class="back" href="javascript:window.close()">✕ Close</a>
+</div>
+
+<div class="main">
+
+  <div class="section">
+    <div class="section-label">Purpose</div>
+    <p>The noise-aware attention gate learns to <strong>suppress tokens that have been corrupted by ASR noise</strong> before pooling the sequence into a sentence representation. Instead of treating all tokens equally, it assigns each token a scalar weight in (0, 1) based on how trustworthy it is.</p>
+    <div class="intuition">
+      <p><strong>Intuition:</strong> When ASR corrupts "madarchod" → "madrachd", the corrupted token lands in an unfamiliar region of the embedding space. The gate learns that such tokens are less reliable and down-weights their contribution to the final sentence vector.</p>
+    </div>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">Equations</div>
+    <h2>Gate computation</h2>
+    <div class="eq-block">
+      \[ g_\psi(\mathbf{H}) = \mathbf{H} \odot \sigma\!\left(\mathbf{W}_g \mathbf{H} + \mathbf{b}_g\right) \]
+    </div>
+    <div class="eq-label">Equation (1) — element-wise gating</div>
+
+    <h2 style="margin-top:1.5rem">Gated mean-pooling</h2>
+    <div class="eq-block">
+      \[ \mathbf{z} = \frac{\displaystyle\sum_{i=1}^{L} g_\psi(\mathbf{h}_i) \cdot m_i}{\displaystyle\sum_{i=1}^{L} m_i} \]
+    </div>
+    <div class="eq-label">Equation (2) — attention-masked pooling</div>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">Symbol Reference</div>
+    <table class="symbol-table">
+      <tr><th>Symbol</th><th>Meaning</th></tr>
+      <tr><td>H ∈ ℝ^{L×d}</td><td>Token-level contextual representations from the pretrained encoder (e.g. XLM-R last hidden state)</td></tr>
+      <tr><td>W_g ∈ ℝ^{d×1}</td><td>Learned gate weight matrix — projects each token's d-dimensional vector to a scalar logit</td></tr>
+      <tr><td>b_g ∈ ℝ</td><td>Learned gate bias</td></tr>
+      <tr><td>σ(·)</td><td>Sigmoid function — squashes the logit to (0, 1); values near 0 suppress the token, near 1 preserve it</td></tr>
+      <tr><td>⊙</td><td>Element-wise (Hadamard) multiplication — applies the scalar gate to each dimension of h_i</td></tr>
+      <tr><td>m_i ∈ {0,1}</td><td>Attention mask — 1 for real tokens, 0 for padding tokens</td></tr>
+      <tr><td>z ∈ ℝ^d</td><td>Final sentence representation passed to the classifier and PWNIC projection head</td></tr>
+      <tr><td>L</td><td>Sequence length (max 128 tokens)</td></tr>
+      <tr><td>d</td><td>Hidden size — 768 for XLM-R base, mBERT base, MuRIL base</td></tr>
+    </table>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">Data Flow</div>
+    <div class="diagram">
+      <div class="flow">
+        <div class="flow-box">Token embeddings<br><small>H ∈ ℝ^{L×768}</small></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box accent">W_g H + b_g<br><small>linear projection</small></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">σ(·)<br><small>sigmoid → (0,1)</small></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">H ⊙ gate<br><small>weighted tokens</small></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">mean pool<br><small>→ z ∈ ℝ^768</small></div>
+      </div>
+    </div>
+    <p style="font-size:13px; color:#78716C; margin-top:0.5rem">The gate adds only <strong>d+1 parameters</strong> (768 weights + 1 bias) to the model — negligible overhead.</p>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">Key Finding</div>
+    <div class="finding">
+      <div class="finding-label">Ablation result (XLM-R, seed 42)</div>
+      <p>Gate alone: avg F1 = <strong>0.8339</strong> vs. baseline 0.8394 (<strong>−0.55 F1</strong>). Adding PWNIC: avg F1 = <strong>0.8401</strong> (+0.62 recovery). Adding Aux head: <strong>0.8434</strong> (+0.33 further).</p>
+    </div>
+    <div class="warning">
+      <div class="warning-label">Without PWNIC, the gate is harmful</div>
+      <p>The gate has no signal about <em>which</em> tokens are noisy. Without PWNIC contrastive alignment, it learns to suppress tokens arbitrarily — including clean informative ones — reducing performance below baseline.</p>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
