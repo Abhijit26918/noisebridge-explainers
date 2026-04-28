@@ -57,7 +57,7 @@
     <div class="section-label">Purpose</div>
     <p>The noise-aware attention gate learns to <strong>suppress tokens that have been corrupted by ASR noise</strong> before pooling the sequence into a sentence representation. Instead of treating all tokens equally, it assigns each token a scalar weight in (0, 1) based on how trustworthy it is.</p>
     <div class="intuition">
-      <p><strong>Intuition:</strong> When ASR corrupts "madarchod" → "madrachd", the corrupted token lands in an unfamiliar region of the embedding space. The gate learns that such tokens are less reliable and down-weights their contribution to the final sentence vector.</p>
+      <p><strong>Intuition:</strong> When ASR corrupts "nafrat" → "nafarat", the corrupted token lands in an unfamiliar region of the embedding space. The gate learns that such tokens are less reliable and down-weights their contribution to the final sentence vector.</p>
     </div>
   </div>
 
