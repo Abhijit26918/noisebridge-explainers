@@ -59,7 +59,7 @@
     <div class="section-label">Purpose</div>
     <p>PWNIC aligns the representation of a clean utterance with its ASR-noisy version in a learned projection space. The key innovation: <strong>the alignment pressure is proportional to how phonetically different the two versions are</strong>. Pairs that are nearly identical contribute little; severely distorted pairs receive the strongest gradient.</p>
     <div class="intuition">
-      <p><strong>Why this matters:</strong> Standard InfoNCE treats all positive pairs equally. But "hello" → "helo" (minor deletion) deserves far less correction force than "madarchod" → "mzdrchd" (severe corruption). PWNIC encodes this distinction directly into the loss.</p>
+      <p><strong>Why this matters:</strong> Standard InfoNCE treats all positive pairs equally. But "hello" → "helo" (minor deletion) deserves far less correction force than "harami" → "hazrnis" (severe corruption). PWNIC encodes this distinction directly into the loss.</p>
     </div>
   </div>
 
@@ -89,7 +89,7 @@
       <span>Clean</span><span>Noisy (high noise)</span><span>φ</span>
     </div>
     <div class="example-row">
-      <span>madarchod</span><span>mzdrchd</span>
+      <span>harami</span><span>hazrnis</span>
       <div><div class="phi-val">0.089</div><div class="phi-bar-bg"><div class="phi-bar" style="width:89%"></div></div></div>
     </div>
     <div class="example-row">
